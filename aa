@@ -1,0 +1,424 @@
+import requests
+from bs4 import BeautifulSoup
+import socket
+import nmap
+import json
+import time
+from datetime import datetime
+from threading import Thread
+from queue import Queue
+import sqlite3
+
+class IndustrialVulnerabilityScanner:
+    def __init__(self):
+        self.target = ""
+        self.results = {
+            "recon": {},
+            "web_vulns": [],
+            "network_vulns": [],
+            "static_analysis": [],
+            "risk_scores": {}
+        }
+        self.db = VulnerabilityDB()
+        
+    def set_target(self, target):
+        """Set the target for scanning"""
+        self.target = target
+        
+    def reconnaissance(self):
+        """Perform reconnaissance on target"""
+        print("[*] Starting Reconnaissance...")
+        recon_data = {
+            "ip_address": "",
+            "domain_info": {},
+            "subdomains": [],
+            "ports": []
+        }
+        
+        # Get IP address
+        try:
+            recon_data["ip_address"] = socket.gethostbyname(self.target)
+        except Exception as e:
+            recon_data["ip_address"] = f"Error: {str(e)}"
+            
+        # Basic domain info (simplified)
+        recon_data["domain_info"] = {
+            "target": self.target,
+            "scan_time": datetime.now().isoformat()
+        }
+        
+        # Subdomain enumeration (simplified example)
+        recon_data["subdomains"] = self._enumerate_subdomains()
+        
+        # Port scan
+        recon_data["ports"] = self._port_scan(recon_data["ip_address"])
+        
+        self.results["recon"] = recon_data
+        return recon_data
+    
+    def _enumerate_subdomains(self):
+        """Enumerate subdomains (simplified)"""
+        common_subdomains = ["www", "mail", "ftp", "admin", "api"]
+        found_subdomains = []
+        for sub in common_subdomains:
+            try:
+                full_domain = f"{sub}.{self.target}"
+                socket.gethostbyname(full_domain)
+                found_subdomains.append(full_domain)
+            except:
+                pass
+        return found_subdomains
+    
+    def _port_scan(self, ip):
+        """Scan open ports using nmap"""
+        nm = nmap.PortScanner()
+        try:
+            nm.scan(ip, '1-1000')
+            ports = []
+            for proto in nm[ip].all_protocols():
+                lport = nm[ip][proto].keys()
+                for port in lport:
+                    ports.append({
+                        "port": port,
+                        "state": nm[ip][proto][port]['state'],
+                        "service": nm[ip][proto][port]['name']
+                    })
+            return ports
+        except Exception as e:
+            return [{"error": str(e)}]
+    
+    def web_application_scan(self):
+        """Scan web application vulnerabilities"""
+        print("[*] Scanning Web Application...")
+        vulns = []
+        
+        # Check for common web vulnerabilities
+        vulns.extend(self._check_xss())
+        vulns.extend(self._check_sql_injection())
+        vulns.extend(self._check_headers())
+        
+        self.results["web_vulns"] = vulns
+        return vulns
+    
+    def _check_xss(self):
+        """Check for XSS vulnerabilities"""
+        xss_payloads = [
+            "<script>alert('XSS')</script>",
+            "javascript:alert('XSS')",
+            "<img src=x onerror=alert('XSS')>"
+        ]
+        vulns = []
+        
+        for payload in xss_payloads:
+            test_url = f"http://{self.target}/?test={payload}"
+            try:
+                response = requests.get(test_url, timeout=5)
+                if payload in response.text:
+                    vulns.append({
+                        "type": "XSS",
+                        "url": test_url,
+                        "payload": payload,
+                        "severity": "High"
+                    })
+            except:
+                pass
+        return vulns
+    
+    def _check_sql_injection(self):
+        """Check for SQL injection vulnerabilities"""
+        sql_payloads = [
+            "' OR '1'='1",
+            "'; DROP TABLE users; --",
+            "' UNION SELECT * FROM admin; --"
+        ]
+        vulns = []
+        
+        for payload in sql_payloads:
+            test_url = f"http://{self.target}/?id={payload}"
+            try:
+                response = requests.get(test_url, timeout=5)
+                error_indicators = ["mysql", "syntax", "SQL", "ORA-", "PostgreSQL"]
+                for indicator in error_indicators:
+                    if indicator.lower() in response.text.lower():
+                        vulns.append({
+                            "type": "SQL Injection",
+                            "url": test_url,
+                            "payload": payload,
+                            "severity": "Critical"
+                        })
+                        break
+            except:
+                pass
+        return vulns
+    
+    def _check_headers(self):
+        """Check security headers"""
+        vulns = []
+        try:
+            response = requests.get(f"http://{self.target}", timeout=5)
+            headers = response.headers
+            
+            security_headers = [
+                "X-Content-Type-Options",
+                "X-Frame-Options",
+                "Content-Security-Policy",
+                "Strict-Transport-Security"
+            ]
+            
+            missing_headers = []
+            for header in security_headers:
+                if header not in headers:
+                    missing_headers.append(header)
+            
+            if missing_headers:
+                vulns.append({
+                    "type": "Missing Security Headers",
+                    "missing": missing_headers,
+                    "severity": "Medium"
+                })
+        except Exception as e:
+            vulns.append({
+                "type": "Header Check Error",
+                "error": str(e),
+                "severity": "Low"
+            })
+        return vulns
+    
+    def network_scan(self):
+        """Perform network vulnerability scan"""
+        print("[*] Scanning Network...")
+        vulns = []
+        
+        # Check for open/critical ports
+        critical_ports = [21, 22, 23, 25, 53, 80, 110, 143, 443, 993, 995]
+        open_ports = [p for p in self.results["recon"]["ports"] if p.get("port") in critical_ports]
+        
+        for port in open_ports:
+            vulns.append({
+                "type": "Open Critical Port",
+                "port": port["port"],
+                "service": port["service"],
+                "severity": "Medium"
+            })
+        
+        # Check for weak services (simplified)
+        for port in self.results["recon"]["ports"]:
+            if port.get("service") == "telnet":
+                vulns.append({
+                    "type": "Insecure Service",
+                    "service": "Telnet",
+                    "severity": "High"
+                })
+        
+        self.results["network_vulns"] = vulns
+        return vulns
+    
+    def static_analysis(self, code_paths=None):
+        """Perform static code analysis (simplified)"""
+        print("[*] Performing Static Analysis...")
+        vulns = []
+        
+        # This would typically analyze source code files
+        # For demo purposes, we'll simulate findings
+        sample_findings = [
+            {
+                "file": "config.py",
+                "line": 25,
+                "issue": "Hardcoded credentials",
+                "severity": "Critical"
+            },
+            {
+                "file": "database.py",
+                "line": 42,
+                "issue": "SQL query without parameterization",
+                "severity": "High"
+            },
+            {
+                "file": "utils.py",
+                "line": 15,
+                "issue": "Weak random number generator",
+                "severity": "Medium"
+            }
+        ]
+        
+        self.results["static_analysis"] = sample_findings
+        return sample_findings
+    
+    def calculate_risk_scores(self):
+        """Calculate risk scores based on findings"""
+        print("[*] Calculating Risk Scores...")
+        risk_scores = {
+            "overall": 0,
+            "web": 0,
+            "network": 0,
+            "static": 0
+        }
+        
+        severity_weights = {
+            "Low": 1,
+            "Medium": 5,
+            "High": 10,
+            "Critical": 20
+        }
+        
+        # Calculate web score
+        for vuln in self.results["web_vulns"]:
+            risk_scores["web"] += severity_weights.get(vuln["severity"], 0)
+        
+        # Calculate network score
+        for vuln in self.results["network_vulns"]:
+            risk_scores["network"] += severity_weights.get(vuln["severity"], 0)
+        
+        # Calculate static analysis score
+        for vuln in self.results["static_analysis"]:
+            risk_scores["static"] += severity_weights.get(vuln["severity"], 0)
+        
+        # Overall score (capped at 100)
+        risk_scores["overall"] = min(100, 
+                                    risk_scores["web"] + 
+                                    risk_scores["network"] + 
+                                    risk_scores["static"])
+        
+        self.results["risk_scores"] = risk_scores
+        return risk_scores
+    
+    def generate_report(self, format="json"):
+        """Generate vulnerability report"""
+        print("[*] Generating Report...")
+        report_data = {
+            "scan_target": self.target,
+            "scan_date": datetime.now().isoformat(),
+            "reconnaissance": self.results["recon"],
+            "vulnerabilities": {
+                "web": self.results["web_vulns"],
+                "network": self.results["network_vulns"],
+                "static": self.results["static_analysis"]
+            },
+            "risk_scores": self.results["risk_scores"]
+        }
+        
+        if format == "json":
+            filename = f"vulnerability_report_{int(time.time())}.json"
+            with open(filename, 'w') as f:
+                json.dump(report_data, f, indent=2)
+        elif format == "html":
+            filename = f"vulnerability_report_{int(time.time())}.html"
+            self._generate_html_report(report_data, filename)
+        
+        # Save to database
+        self.db.save_scan_result(self.target, report_data)
+        
+        return filename
+    
+    def _generate_html_report(self, data, filename):
+        """Generate HTML formatted report"""
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Vulnerability Scan Report</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; }}
+                .header {{ background-color: #4CAF50; color: white; padding: 10px; }}
+                .section {{ margin: 20px 0; }}
+                .vuln-item {{ border: 1px solid #ddd; margin: 10px 0; padding: 10px; }}
+                .critical {{ border-left: 5px solid red; }}
+                .high {{ border-left: 5px solid orange; }}
+                .medium {{ border-left: 5px solid yellow; }}
+                .low {{ border-left: 5px solid blue; }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>Vulnerability Scan Report</h1>
+                <p>Target: {data['scan_target']}</p>
+                <p>Date: {data['scan_date']}</p>
+            </div>
+            
+            <div class="section">
+                <h2>Risk Score: {data['risk_scores']['overall']}/100</h2>
+                <p>Web: {data['risk_scores']['web']} | Network: {data['risk_scores']['network']} | Static: {data['risk_scores']['static']}</p>
+            </div>
+            
+            <div class="section">
+                <h2>Reconnaissance Results</h2>
+                <p>IP Address: {data['reconnaissance']['ip_address']}</p>
+                <p>Subdomains Found: {', '.join(data['reconnaissance']['subdomains'])}</p>
+                <h3>Open Ports:</h3>
+                <ul>
+        """
+        
+        for port in data['reconnaissance']['ports']:
+            html_content += f"<li>Port {port.get('port', 'N/A')}: {port.get('service', 'Unknown')} ({port.get('state', 'N/A')})</li>"
+        
+        html_content += """
+                </ul>
+            </div>
+            
+            <div class="section">
+                <h2>Web Vulnerabilities</h2>
+        """
+        
+        for vuln in data['vulnerabilities']['web']:
+            severity_class = vuln['severity'].lower()
+            html_content += f"""
+                <div class="vuln-item {severity_class}">
+                    <h3>{vuln['type']}</h3>
+                    <p>Severity: {vuln['severity']}</p>
+                    <p>Details: {vuln.get('url', vuln.get('payload', 'N/A'))}</p>
+                </div>
+            """
+        
+        html_content += """
+            </div>
+        </body>
+        </html>
+        """
+        
+        with open(filename, 'w') as f:
+            f.write(html_content)
+
+class VulnerabilityDB:
+    def __init__(self):
+        self.conn = sqlite3.connect('vulnerability_scans.db', check_same_thread=False)
+        self.create_table()
+    
+    def create_table(self):
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS scans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target TEXT,
+                scan_date TEXT,
+                results TEXT
+            )
+        ''')
+        self.conn.commit()
+    
+    def save_scan_result(self, target, results):
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "INSERT INTO scans (target, scan_date, results) VALUES (?, ?, ?)",
+            (target, datetime.now().isoformat(), json.dumps(results))
+        )
+        self.conn.commit()
+
+# Example usage
+if __name__ == "__main__":
+    scanner = IndustrialVulnerabilityScanner()
+    scanner.set_target("example.com")
+    
+    # Perform all scanning phases
+    scanner.reconnaissance()
+    scanner.web_application_scan()
+    scanner.network_scan()
+    scanner.static_analysis()
+    scanner.calculate_risk_scores()
+    
+    # Generate reports
+    json_report = scanner.generate_report("json")
+    html_report = scanner.generate_report("html")
+    
+    print(f"[+] JSON Report saved as: {json_report}")
+    print(f"[+] HTML Report saved as: {html_report}")
+    print(f"[+] Overall Risk Score: {scanner.results['risk_scores']['overall']}/100")
