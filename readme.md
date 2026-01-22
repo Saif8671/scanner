@@ -16,30 +16,13 @@ An industrial-grade vulnerability scanner with multiple scanning capabilities in
 - **Report Generation**: JSON/HTML formatted reports with database storage
 
 ## Installation
-
 ### Prerequisites
-- Python 3.7+
-
-### Required Packages
-```bash
-pip install requests beautifulsoup4 python-nmap
-```
-## System Dependencies (Optional but Recommended)
-For enhanced network scanning capabilities:
-
-- Windows: Download Nmap from nmap.org
-- Linux: sudo apt-get install nmap
-- macOS: brew install nmap
-- Quick Start
-- Save the code as vulnerability_scanner.py
-
-## Install Dependencies
 ``` bash
-pip install requests beautifulsoup4 python-nmap
+pip install requirements.txt
 ```
 Run the Scanner
 ```bash
-python vulnerability_scanner.py --target example.com --output html
+python vulnerability_scanner_app.py 
 ```
 ## Module Details
 ### Web Application Scanner
@@ -63,17 +46,10 @@ python vulnerability_scanner.py --target example.com --output html
 - Medium: 5 points
 - Low: 1 point
 Maximum score: 100 points
-### Technical Architecture
-Extensible Design
-Modular scanning components
-Plugin architecture for new scanners
-Configurable vulnerability checks
-Database-integrated reporting
+
 ## License
 This project is licensed under the MIT License - see the source code for details.
 
-## Support
-For issues and feature requests, please use the appropriate channels.
 
 ## Disclaimer
 This tool is intended for educational and authorized security testing purposes only. The developers are not responsible for any misuse or damage caused by this tool.
