@@ -47,6 +47,8 @@ python vulnerability_scanner_app.py
 - Low: 1 point
 Maximum score: 100 points
 
+## screenshot of the dashbord :<img width="1366" height="768" alt="Screenshot 2026-01-22 230519" src="https://github.com/user-attachments/assets/18fc6ffd-949f-4aa8-9f89-4dad1a32982a" />
+
 ## License
 This project is licensed under the MIT License - see the source code for details.
 
